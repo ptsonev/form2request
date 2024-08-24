@@ -27,8 +27,8 @@ def _parsel_to_lxml(element: HtmlElement | Selector | SelectorList) -> HtmlEleme
 def _get_enctype(
         form: FormElement, click_element: HtmlElement | None, enctype: None | str
 ) -> str:
-    _enctype = enctype or (form or click_element or {}).get("enctype") or ""
-    _enctype = _enctype.strip().lower()
+    _enctype = enctype or (form.get("enctype") if form is not None else "") or (click_element.get("enctype") if click_element is not None else "")
+    _enctype = (_enctype or '').strip().lower()
 
     if _enctype and _enctype not in {"application/x-www-form-urlencoded", "multipart/form-data", "text/plain"}:
         raise ValueError(
