@@ -24,41 +24,26 @@ def _parsel_to_lxml(element: HtmlElement | Selector | SelectorList) -> HtmlEleme
     return element
 
 
-def _enctype(
-    form: FormElement, click_element: HtmlElement | None, enctype: None | str
+def _get_enctype(
+        form: FormElement, click_element: HtmlElement | None, enctype: None | str
 ) -> str:
-    if enctype:
-        enctype = enctype.lower()
-        if enctype not in {"application/x-www-form-urlencoded", "text/plain"}:
-            raise ValueError(
-                f"The specified form enctype ({enctype!r}) is not supported "
-                f"for forms with the POST method."
-            )
-    elif click_element is not None and (
-        enctype := (click_element.get("formenctype") or "").lower()
-    ):
-        if enctype == "multipart/form-data":
-            raise NotImplementedError(
-                f"{click_element} has formenctype set to {enctype!r}, which "
-                f"form2request does not currently support for forms with the "
-                f"POST method."
-            )
-    elif (
-        enctype := (form.get("enctype") or "").lower()
-    ) and enctype == "multipart/form-data":
-        raise NotImplementedError(
-            f"{form} has enctype set to {enctype!r}, which form2request does "
-            f"not currently support for forms with the POST method."
+    _enctype = enctype or (form or click_element or {}).get("enctype") or ""
+    _enctype = _enctype.strip().lower()
+
+    if _enctype and _enctype not in {"application/x-www-form-urlencoded", "multipart/form-data", "text/plain"}:
+        raise ValueError(
+            f"The specified form enctype ({_enctype!r}) is not supported "
+            f"for forms with the POST method."
         )
-    return enctype
+    return _enctype
 
 
 def _url(form: FormElement, click_element: HtmlElement | None) -> str:
     if form.base_url is None:
         raise ValueError(f"{form} has no base_url set.")
     action = (
-        click_element.get("formaction") if click_element is not None else None
-    ) or form.get("action")
+                 click_element.get("formaction") if click_element is not None else None
+             ) or form.get("action")
     if action is None:
         return form.base_url
     return urljoin(form.base_url, strip_html5_whitespace(action))
@@ -68,7 +53,7 @@ USER = object()
 
 
 def _method(
-    form: FormElement, click_element: HtmlElement | None, method: None | str
+        form: FormElement, click_element: HtmlElement | None, method: None | str
 ) -> str:
     if method:
         method_src = USER
@@ -97,7 +82,7 @@ def _method(
 
 
 def _click_element(
-    form: FormElement, click: None | bool | HtmlElement
+        form: FormElement, click: None | bool | HtmlElement
 ) -> HtmlElement | None:
     if click is False:
         return None
@@ -124,7 +109,7 @@ def _click_element(
 
 
 def _data(
-    form: FormElement, data: FormdataType, click_element: HtmlElement | None
+        form: FormElement, data: FormdataType, click_element: HtmlElement | None
 ) -> list[tuple[str, str]]:
     data = data or {}
     if click_element is not None and (name := click_element.get("name")):
@@ -231,12 +216,12 @@ class Request:
 
 
 def form2request(
-    form: FormElement | Selector | SelectorList,
-    data: FormdataType = None,
-    *,
-    click: None | bool | HtmlElement = None,
-    method: None | str = None,
-    enctype: None | str = None,
+        form: FormElement | Selector | SelectorList,
+        data: FormdataType = None,
+        *,
+        click: None | bool | HtmlElement = None,
+        method: None | str = None,
+        enctype: None | str = None,
 ) -> Request:
     """Return request data for an HTML form submission.
 
@@ -277,22 +262,27 @@ def form2request(
     url = _url(form, click_element)
     method = _method(form, click_element, method)
     headers = []
-    body = ""
+    body = bytes()
     data = _data(form, data, click_element)
     if method == "GET":
         url = urlunsplit(urlsplit(url)._replace(query=urlencode(data, doseq=True)))
     else:
         assert method == "POST"
-        enctype = _enctype(form, click_element, enctype)
+        enctype = _get_enctype(form, click_element, enctype)
         if enctype == "text/plain":
             headers = [("Content-Type", "text/plain")]
-            body = "\n".join(f"{k}={v}" for k, v in data)
+            body = ("\n".join(f"{k}={v}" for k, v in data)).encode()
+        elif enctype == "multipart/form-data":
+            from urllib3 import encode_multipart_formdata
+            body, content_type = encode_multipart_formdata(data)
+            headers = [("Content-Type", content_type)]
+
         else:
             headers = [("Content-Type", "application/x-www-form-urlencoded")]
-            body = urlencode(data, doseq=True)
+            body = urlencode(data, doseq=True).encode()
     return Request(
         url=url,
         method=method,
         headers=headers,
-        body=body.encode(),
+        body=body,
     )
