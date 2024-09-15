@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Dict, Iterable, Optional, Tuple, Union
 from urllib.parse import urlencode, urljoin, urlsplit, urlunsplit
@@ -274,7 +275,12 @@ def form2request(
             body = ("\n".join(f"{k}={v}" for k, v in data)).encode()
         elif enctype == "multipart/form-data":
             from urllib3 import encode_multipart_formdata
-            body, content_type = encode_multipart_formdata(data)
+
+            # this is for caching purposes, otherwise the same request will have a different fingerprint and Scrapy will re-download it
+            _to_hash = str(sorted(data, key=lambda x: x[0])).encode()
+            boundary = hashlib.md5(_to_hash).hexdigest()
+
+            body, content_type = encode_multipart_formdata(data, boundary=boundary)
             headers = [("Content-Type", content_type)]
 
         else:
